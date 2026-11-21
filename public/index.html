@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ЖАДЮГА — Онлайн</title>
+<style>
+  :root{ --bg:#0b0d13; --panel:#161a24; --panel2:#1e2430; --txt:#e8ecf5; --muted:#8892a6; --gold:#ffd54f; --red:#ff5c5c; }
+  *{box-sizing:border-box} html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,sans-serif;overflow:hidden;user-select:none;}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:15px;}
+  #board{display:grid;grid-template-columns:repeat(2, 1fr);gap:15px;width:min(96vw, 900px);max-height:70vh;}
+  .player-card{background:var(--panel);border:2px solid #2a3242;border-radius:16px;padding:15px;display:flex;flex-direction:column;gap:10px;position:relative;transition:all 0.3s;}
+  .player-card.active{border-color:var(--gold);box-shadow:0 0 20px rgba(255,213,79,0.2);transform:scale(1.02);}
+  .p-header{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:16px;}
+  .p-bag-count{font-size:12px;color:var(--muted);background:rgba(0,0,0,0.3);padding:4px 8px;border-radius:8px;}
+  .p-secured{display:flex;align-items:center;gap:5px;font-size:18px;background:rgba(255,213,79,0.1);padding:6px 12px;border-radius:10px;width:fit-content;}
+  .p-pulled-area{min-height:40px;background:rgba(0,0,0,0.2);border-radius:10px;padding:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .stone{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;box-shadow:inset -2px -2px 6px rgba(0,0,0,0.5), inset 2px 2px 4px rgba(255,255,255,0.4);}
+  .stone.gold{background:radial-gradient(circle at 30% 30%, #fff6c4, #e0a000);}
+  .stone.red{background:radial-gradient(circle at 30% 30%, #ff8a8a, #cc0000);}
+  .stone.green{background:radial-gradient(circle at 30% 30%, #b2ff59, #558b2f);}
+  .stone.blue{background:radial-gradient(circle at 30% 30%, #80d8ff, #0091ea);}
+  #controls{display:flex;gap:15px;background:var(--panel);padding:15px 25px;border-radius:20px;border:1px solid #2a3242;align-items:center;}
+  .btn{padding:12px 24px;border-radius:12px;border:1px solid #333d52;background:var(--panel2);color:var(--txt);font-size:16px;font-weight:700;cursor:pointer;transition:.15s;font-family:inherit;}
+  .btn:hover{background:#2a3242;transform:translateY(-2px);}
+  .btn.primary{background:linear-gradient(135deg, #ffd54f, #ffb300);color:#231a00;border:none;}
+  .btn.danger{background:linear-gradient(135deg, #ff5c5c, #d32f2f);color:#fff;border:none;}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+  #log-area{width:min(96vw, 900px);height:80px;background:var(--panel);border-radius:12px;padding:10px 15px;font-size:13px;color:var(--muted);overflow-y:auto;border:1px solid #222a38;display:flex;flex-direction:column-reverse;}
+  .log-entry{margin-bottom:4px;} .log-entry b{color:var(--txt);}
+  #overlay{position:fixed;inset:0;background:rgba(6,8,13,.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px;}
+  .panel{width:min(92vw, 440px);background:linear-gradient(180deg,#1a2030,#141822);border:1px solid #2a3242;border-radius:20px;padding:26px 24px;box-shadow:0 30px 80px rgba(0,0,0,.7);text-align:center;}
+  h1{margin:0 0 10px;font-size:34px;letter-spacing:4px;background:linear-gradient(90deg,#ffd54f,#ff8a65,#4fc3f7);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:900;}
+  .sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin:0 0 18px;}
+  .inp{width:100%;padding:12px 14px;border-radius:12px;background:var(--panel2);border:1px solid #303a4d;color:var(--txt);font-size:15px;outline:none;margin-bottom:10px;font-family:inherit;}
+  .inp.code{text-transform:uppercase;letter-spacing:6px;text-align:center;font-weight:800;}
+  .row{display:flex;gap:10px;} .row .inp{margin-bottom:0;}
+  .status{color:#ff8080;font-size:12.5px;min-height:16px;margin-top:12px;line-height:1.4;}
+  .code-big{font-size:42px;font-weight:900;letter-spacing:10px;color:var(--gold);margin:6px 0 18px;}
+  .lobby-list{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;}
+  .lb{display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid #2a3242;border-radius:11px;padding:9px 13px;font-size:14px;}
+  .lb .dot{width:12px;height:12px;border-radius:50%;}
+  .lb .tag{margin-left:auto;font-size:11px;color:var(--gold);font-weight:800;}
+</style>
+</head>
+<body>
+
+<div id="wrap" style="display:none;">
+  <div id="board"></div>
+  <div id="controls">
+    <button id="drawBtn" class="btn primary" onclick="doAction('draw')">Взять камень</button>
+    <button id="stopBtn" class="btn danger" onclick="doAction('stop')">Остановиться</button>
+  </div>
+  <div id="log-area"></div>
+</div>
+
+<div id="overlay">
+  <div class="panel">
+    <h1>ЖАДЮГА</h1>
+    <div id="menuView">
+      <p class="sub">Найди золото и остановись.<br>Вытянешь два одинаковых мусорных камня — провалишься!</p>
+      <input id="nameIn" class="inp" placeholder="Твоё имя" maxlength="12">
+      <button id="createBtn" class="btn primary" style="width:100%;margin-bottom:10px;">Создать игру</button>
+      <div style="color:#4a5468;font-size:12px;margin:4px 0 12px;">— или —</div>
+      <div class="row">
+        <input id="codeIn" class="inp code" placeholder="КОД" maxlength="4">
+        <button id="joinBtn" class="btn">Войти</button>
+      </div>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div id="lobbyView" style="display:none">
+      <div class="sub" style="margin-bottom:4px">Код комнаты</div>
+      <div id="roomCode" class="code-big">----</div>
+      <div id="lobbyList" class="lobby-list"></div>
+      <button id="startBtn" class="btn primary" style="width:100%;">Начать игру</button>
+      <div id="lobbyHint" class="status" style="color:var(--muted)"></div>
+    </div>
+
+    <div id="overView" style="display:none">
+      <div id="overTitle" style="font-size:24px;font-weight:900;margin-bottom:16px;color:var(--gold);">Игра окончена</div>
+      <div id="overList" class="lobby-list"></div>
+      <button id="againBtn" class="btn primary" style="width:100%;">Играть снова</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const COLORS = ['#ff5c5c', '#4fc3f7', '#ffd54f', '#9ccc65'];
+const WIN_SCORE = 5;
+const socket = io();
+
+let myId = null, isHost = false, currentCode = '';
+
+const overlay = document.getElementById('overlay');
+const menuView = document.getElementById('menuView');
+const lobbyView = document.getElementById('lobbyView');
+const overView = document.getElementById('overView');
+const roomCodeEl = document.getElementById('roomCode');
+const lobbyListEl = document.getElementById('lobbyList');
+const overListEl = document.getElementById('overList');
+const overTitleEl = document.getElementById('overTitle');
+const statusEl = document.getElementById('status');
+const gameWrap = document.getElementById('wrap');
+const boardEl = document.getElementById('board');
+const drawBtn = document.getElementById('drawBtn');
+const stopBtn = document.getElementById('stopBtn');
+const logArea = document.getElementById('log-area');
+
+function showView(id){
+  overlay.style.display = id ? 'flex' : 'none';
+  gameWrap.style.display = id ? 'none' : 'flex';
+  menuView.style.display = id === 'menu' ? 'block' : 'none';
+  lobbyView.style.display = id === 'lobby' ? 'block' : 'none';
+  overView.style.display = id === 'over' ? 'block' : 'none';
+}
+
+document.getElementById('createBtn').onclick = () => {
+  const name = document.getElementById('nameIn').value.trim() || 'Игрок';
+  socket.emit('createRoom', name);
+};
+
+document.getElementById('joinBtn').onclick = () => {
+  const name = document.getElementById('nameIn').value.trim() || 'Игрок';
+  const code = document.getElementById('codeIn').value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if (code.length !== 4) { statusEl.textContent = 'Код из 4 символов'; return; }
+  socket.emit('joinRoom', { code, name });
+};
+
+document.getElementById('startBtn').onclick = () => socket.emit('startGame');
+document.getElementById('againBtn').onclick = () => {
+    if (isHost) socket.emit('startGame');
+    else showView('lobby');
+};
+
+// События от админа
+socket.on('admin:kicked', () => { alert('Вы были исключены администратором.'); window.location.reload(); });
+socket.on('admin:roomClosed', () => { alert('Администратор закрыл комнату.'); window.location.reload(); });
+
+socket.on('roomJoined', (data) => {
+  myId = data.id; currentCode = data.code;
+  statusEl.textContent = '';
+  showView('lobby');
+});
+
+socket.on('errorMsg', (msg) => { statusEl.textContent = msg; });
+
+socket.on('state', (st) => {
+  isHost = (st.hostId === myId);
+  document.getElementById('startBtn').style.display = (isHost && !st.started) ? 'block' : 'none';
+  
+  if (!st.started) {
+    showView('lobby');
+    roomCodeEl.textContent = st.code;
+    lobbyListEl.innerHTML = st.players.map(p => `
+      <div class="lb">
+        <span class="dot" style="background:${COLORS[p.colorIdx]}"></span>
+        <span>${esc(p.name)}</span>
+        ${p.id === myId ? '<span class="tag">ТЫ</span>' : ''}
+      </div>`).join('');
+  } else {
+    if (st.winner) {
+      showView('over');
+      const winner = st.players.find(p => p.id === st.winner);
+      overTitleEl.textContent = `Победил ${winner.name}!`;
+      overListEl.innerHTML = st.players.sort((a,b) => b.secured - a.secured).map((p, i) => `
+        <div class="lb">
+          <span class="dot" style="background:${COLORS[p.colorIdx]}"></span>
+          <span>${esc(p.name)}</span>
+          <span class="tag" style="color:var(--gold)">${p.secured} очк.</span>
+          <span style="color:#5a6478;font-size:12px">#${i+1}</span>
+        </div>`).join('');
+      document.getElementById('againBtn').style.display = isHost ? 'block' : 'none';
+    } else {
+      showView(null);
+      renderGame(st);
+    }
+  }
+});
+
+function doAction(act) { socket.emit('action', act); }
+
+function renderGame(st) {
+  boardEl.innerHTML = st.players.map(p => {
+    let pulledHtml = p.pulled.map(item => `<div class="stone ${item}"></div>`).join('');
+    let securedHtml = '';
+    for(let i=0; i<WIN_SCORE; i++) securedHtml += (i < p.secured) ? '🪙' : '⚫';
+    return `
+      <div class="player-card ${p.isTurn ? 'active' : ''}">
+        <div class="p-header">
+          <span style="color:${COLORS[p.colorIdx]}">${esc(p.name)} ${p.id === myId ? '(Ты)' : ''}</span>
+          <span class="p-bag-count">В мешке: ${p.bagCount}</span>
+        </div>
+        <div class="p-secured">${securedHtml} <span>${p.secured}/5</span></div>
+        <div class="p-pulled-area">${pulledHtml || '<span style="color:#555;font-size:12px;margin:auto;">Пусто</span>'}</div>
+      </div>
+    `;
+  }).join('');
+
+  const me = st.players.find(p => p.id === myId);
+  const myTurn = me && me.isTurn;
+  drawBtn.disabled = !myTurn;
+  stopBtn.disabled = !myTurn;
+  drawBtn.textContent = myTurn ? 'Взять камень' : 'Ожидание...';
+  stopBtn.textContent = (myTurn && me.pulled.includes('gold')) ? 'Остановиться (Забрать 🪙)' : 'Остановиться';
+  logArea.innerHTML = st.log.slice(-5).map(msg => `<div class="log-entry">${msg}</div>`).join('');
+}
+
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+showView('menu');
+</script>
+</body>
+</html>
