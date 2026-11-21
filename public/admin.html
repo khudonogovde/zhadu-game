@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ЖАДЮГА — Админ Панель</title>
+<style>
+  :root { --bg:#0b0d13; --panel:#161a24; --panel2:#1e2430; --txt:#e8ecf5; --muted:#8892a6; --gold:#ffd54f; --red:#ff5c5c; --green:#9ccc65; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,sans-serif;padding:20px;}
+  .login-box { max-width:400px; margin:100px auto; background:var(--panel); padding:30px; border-radius:16px; text-align:center; border:1px solid #2a3242; }
+  .login-box h1 { color:var(--red); margin-top:0; }
+  #dashboard { display:none; max-width:1200px; margin:0 auto; }
+  .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #2a3242; padding-bottom:15px; }
+  .header h1 { margin:0; color:var(--gold); }
+  .rooms-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:15px; }
+  .room-card { background:var(--panel); border:1px solid #2a3242; border-radius:12px; padding:15px; display:flex; flex-direction:column; gap:10px; }
+  .room-header { display:flex; justify-content:space-between; align-items:center; font-size:18px; font-weight:bold; }
+  .room-code { color:var(--gold); letter-spacing:2px; }
+  .room-status { font-size:12px; padding:2px 8px; border-radius:6px; }
+  .status-wait { background:#333d52; color:#fff; }
+  .status-play { background:var(--green); color:#000; }
+  .player-row { display:flex; justify-content:space-between; align-items:center; background:var(--panel2); padding:6px 10px; border-radius:8px; font-size:14px; }
+  .player-row .kick-btn { background:transparent; border:1px solid var(--red); color:var(--red); padding:4px 8px; border-radius:6px; cursor:pointer; font-size:11px; transition:0.2s; }
+  .player-row .kick-btn:hover { background:var(--red); color:#fff; }
+  .room-actions { display:flex; gap:10px; margin-top:auto; padding-top:10px; border-top:1px solid #2a3242; }
+  .btn { padding:8px 12px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-family:inherit; flex:1; transition:0.2s; }
+  .btn-start { background:var(--green); color:#000; }
+  .btn-delete { background:var(--red); color:#fff; }
+  .btn-start:hover, .btn-delete:hover { opacity:0.8; }
+  .btn:disabled { opacity:0.3; cursor:not-allowed; }
+  .inp { width:100%; padding:12px; border-radius:10px; background:var(--panel2); border:1px solid #303a4d; color:var(--txt); font-size:16px; outline:none; margin-bottom:15px; text-align:center; }
+  .inp:focus { border-color:var(--gold); }
+</style>
+</head>
+<body>
+<div id="loginView" class="login-box">
+  <h1>ADMIN PANEL</h1>
+  <p style="color:var(--muted);font-size:14px;">Введите пароль для доступа</p>
+  <input type="password" id="passIn" class="inp" placeholder="••••••••">
+  <button class="btn btn-start" style="width:100%;padding:12px;font-size:16px;" onclick="login()">Войти</button>
+  <div id="loginError" style="color:var(--red);margin-top:10px;font-size:13px;"></div>
+</div>
+
+<div id="dashboard">
+  <div class="header">
+    <h1>Управление комнатами</h1>
+    <div>Всего комнат: <span id="roomCount" style="color:var(--gold);font-weight:bold;">0</span></div>
+  </div>
+  <div id="roomsList" class="rooms-grid"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const loginView = document.getElementById('loginView');
+const dashboard = document.getElementById('dashboard');
+const roomsList = document.getElementById('roomsList');
+const roomCount = document.getElementById('roomCount');
+
+function login() { socket.emit('admin:login', document.getElementById('passIn').value); }
+
+socket.on('admin:error', (msg) => { document.getElementById('loginError').textContent = msg; });
+socket.on('admin:loginSuccess', () => { loginView.style.display = 'none'; dashboard.style.display = 'block'; });
+
+socket.on('admin:data', (rooms) => {
+  roomCount.textContent = rooms.length;
+  if (rooms.length === 0) {
+    roomsList.innerHTML = '<div style="color:var(--muted);grid-column:1/-1;text-align:center;padding:40px;">Нет активных комнат</div>';
+    return;
+  }
+  roomsList.innerHTML = rooms.map(r => {
+    let statusHtml = r.started ? '<span class="room-status status-play">В ИГРЕ</span>' : '<span class="room-status status-wait">В ЛОББИ</span>';
+    let playersHtml = r.players.map(p => `
+      <div class="player-row">
+        <span>${esc(p.name)} ${p.id === r.hostId ? '👑' : ''}</span>
+        <span style="color:var(--gold);font-size:12px;margin-right:10px;">${p.secured}/5</span>
+        <button class="kick-btn" onclick="kickPlayer('${p.id}')">Кик</button>
+      </div>`).join('');
+    return `
+      <div class="room-card">
+        <div class="room-header"><span class="room-code">${r.code}</span>${statusHtml}</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:5px;">Игроков: ${r.players.length}/4</div>
+        <div style="display:flex;flex-direction:column;gap:5px;">${playersHtml}</div>
+        <div class="room-actions">
+          <button class="btn btn-start" onclick="forceStart('${r.code}')" ${r.started ? 'disabled' : ''}>Начать</button>
+          <button class="btn btn-delete" onclick="deleteRoom('${r.code}')">Удалить</button>
+        </div>
+      </div>`;
+  }).join('');
+});
+
+function kickPlayer(id) { if (confirm('Выгнать игрока?')) socket.emit('admin:kick', id); }
+function forceStart(code) { if (confirm('Начать игру в ' + code + '?')) socket.emit('admin:forceStart', code); }
+function deleteRoom(code) { if (confirm('Удалить ' + code + '?')) socket.emit('admin:deleteRoom', code); }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+document.getElementById('passIn').addEventListener('keypress', (e) => { if (e.key === 'Enter') login(); });
+</script>
+</body>
+</html>
